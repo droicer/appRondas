@@ -1,5 +1,11 @@
 package com.ronda.rondacajamarcaapp.ui.admin
 
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.util.Base64
+import android.view.ViewGroup
+import androidx.compose.animation.*
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -12,12 +18,17 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.viewinterop.AndroidView
+import com.google.android.gms.maps.CameraUpdateFactory
+import com.google.android.gms.maps.MapView
+import com.google.android.gms.maps.model.LatLng
+import com.google.android.gms.maps.model.MarkerOptions
 import com.ronda.rondacajamarcaapp.auth.*
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -43,75 +54,41 @@ fun AdminScreen(
             TopAppBar(
                 title = {
                     Column {
-                        Text(
-                            text = "Panel de Administración",
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            text = user.name,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        Text("Panel de Administración", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                        Text(user.name, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 },
                 actions = {
-                    IconButton(
-                        onClick = {
-                            authVM.logout()
-                            onLogout()
-                        },
-                        modifier = Modifier.semantics {
-                            contentDescription = "Cerrar sesión"
-                        }
-                    ) {
-                        Icon(
-                            Icons.Default.ExitToApp,
-                            contentDescription = "Cerrar sesión"
-                        )
+                    IconButton(onClick = { authVM.logout(); onLogout() }) {
+                        Icon(Icons.Default.ExitToApp, contentDescription = "Cerrar sesión")
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(
+                // CORREGIDO: topBarColors → smallTopAppBarColors
+                colors = TopAppBarDefaults.smallTopAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primaryContainer,
                     titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer
                 )
             )
         }
     ) { paddingValues ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-        ) {
-            // Tabs para navegación
-            TabRow(
-                selectedTabIndex = selectedTab,
-                containerColor = MaterialTheme.colorScheme.surface,
-                contentColor = MaterialTheme.colorScheme.primary
-            ) {
-                Tab(
-                    selected = selectedTab == 0,
-                    onClick = { selectedTab = 0 },
-                    text = { Text("Reportes (${reports.size})") },
-                    icon = { Icon(Icons.Default.List, contentDescription = null) }
-                )
-                Tab(
-                    selected = selectedTab == 1,
-                    onClick = { selectedTab = 1 },
-                    text = { Text("Emergencias (${emergencies.size})") },
-                    icon = {
-                        Badge(
-                            containerColor = if (emergencies.isNotEmpty())
-                                MaterialTheme.colorScheme.error
-                            else MaterialTheme.colorScheme.surfaceVariant
-                        ) {
-                            Icon(Icons.Default.Warning, contentDescription = null)
-                        }
+        Column(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
+            TabRow(selectedTabIndex = selectedTab, containerColor = MaterialTheme.colorScheme.surface) {
+                Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Icon(Icons.Default.List, null)
+                        Text("Reportes (${reports.size})")
                     }
-                )
+                }
+                Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Badge(containerColor = if (emergencies.isNotEmpty()) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.surfaceVariant) {
+                            Icon(Icons.Default.Warning, null)
+                        }
+                        Text("Emergencias (${emergencies.size})")
+                    }
+                }
             }
 
-            // Contenido según tab seleccionada
             when (selectedTab) {
                 0 -> ReportsContent(reports, reportVM)
                 1 -> EmergenciesContent(emergencies, emergencyVM)
@@ -121,16 +98,9 @@ fun AdminScreen(
 }
 
 @Composable
-private fun ReportsContent(
-    reports: List<Report>,
-    reportVM: ReportViewModel
-) {
+private fun ReportsContent(reports: List<Report>, reportVM: ReportViewModel) {
     if (reports.isEmpty()) {
-        EmptyState(
-            icon = Icons.Default.CheckCircle,
-            message = "No hay reportes pendientes",
-            description = "Todos los reportes han sido atendidos"
-        )
+        EmptyState(Icons.Default.CheckCircle, "No hay reportes", "Todos los reportes están resueltos")
     } else {
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
@@ -138,45 +108,14 @@ private fun ReportsContent(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             items(reports, key = { it.id }) { report ->
-                ReportCard(report = report, onStatusChange = { newStatus ->
-                    reportVM.updateReportStatus(report.id, newStatus)
-                })
+                ReportCard(report = report, onStatusChange = { reportVM.updateReportStatus(report.id, it) })
             }
         }
     }
 }
 
 @Composable
-private fun EmergenciesContent(
-    emergencies: List<Emergency>,
-    emergencyVM: EmergencyViewModel
-) {
-    if (emergencies.isEmpty()) {
-        EmptyState(
-            icon = Icons.Default.Check,
-            message = "No hay emergencias activas",
-            description = "Sistema en estado normal"
-        )
-    } else {
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
-            items(emergencies, key = { it.id }) { emergency ->
-                EmergencyCard(emergency = emergency, onClose = {
-                    emergencyVM.closeEmergency(emergency.id)
-                })
-            }
-        }
-    }
-}
-
-@Composable
-private fun ReportCard(
-    report: Report,
-    onStatusChange: (String) -> Unit
-) {
+private fun ReportCard(report: Report, onStatusChange: (String) -> Unit) {
     var expanded by remember { mutableStateOf(false) }
     val statusColor = when (report.status) {
         "pendiente" -> MaterialTheme.colorScheme.error
@@ -186,10 +125,8 @@ private fun ReportCard(
     }
 
     ElevatedCard(
-        modifier = Modifier
-            .fillMaxWidth()
-            .semantics { contentDescription = "Reporte: ${report.title}" },
-        elevation = CardDefaults.elevatedCardElevation(defaultElevation = 2.dp)
+        modifier = Modifier.fillMaxWidth(),
+        elevation = CardDefaults.elevatedCardElevation(2.dp)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(
@@ -197,107 +134,107 @@ private fun ReportCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text(
-                    text = report.title,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.weight(1f)
-                )
+                Text(report.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
                 AssistChip(
                     onClick = { },
                     label = { Text(report.status.uppercase()) },
-                    colors = AssistChipDefaults.assistChipColors(
-                        containerColor = statusColor.copy(alpha = 0.15f),
-                        labelColor = statusColor
-                    ),
+                    colors = AssistChipDefaults.assistChipColors(containerColor = statusColor.copy(alpha = 0.15f), labelColor = statusColor),
                     leadingIcon = {
                         Icon(
-                            imageVector = when (report.status) {
+                            when (report.status) {
                                 "pendiente" -> Icons.Default.Schedule
                                 "atendido" -> Icons.Default.Construction
                                 "resuelto" -> Icons.Default.CheckCircle
                                 else -> Icons.Default.Info
-                            },
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp)
+                            }, null, modifier = Modifier.size(16.dp)
                         )
                     }
                 )
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(Modifier.height(12.dp))
+            Text(report.description, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
-            Text(
-                text = report.description,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(4.dp)
-            ) {
-                Icon(
-                    Icons.Default.Person,
-                    contentDescription = null,
-                    modifier = Modifier.size(16.dp),
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Text(
-                    text = report.createdByName,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+            Spacer(Modifier.height(8.dp))
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                Icon(Icons.Default.Person, null, modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(report.createdByName, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
-
-            Box {
-                FilledTonalButton(
-                    onClick = { expanded = true },
-                    modifier = Modifier.fillMaxWidth(),
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp)
-                ) {
-                    Icon(
-                        Icons.Default.Edit,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp)
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    Text("Cambiar Estado")
-                    Spacer(Modifier.weight(1f))
-                    Icon(
-                        if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                        contentDescription = null
+            // FOTO EN BASE64
+            report.photoBase64?.let { base64 ->
+                Spacer(Modifier.height(12.dp))
+                val bitmap = remember(base64) {
+                    val bytes = Base64.decode(base64, Base64.DEFAULT)
+                    BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                }
+                bitmap?.let {
+                    Image(
+                        bitmap = it.asImageBitmap(),
+                        contentDescription = "Foto del reporte",
+                        modifier = Modifier.fillMaxWidth().height(180.dp).clip(RoundedCornerShape(12.dp)),
+                        contentScale = androidx.compose.ui.layout.ContentScale.Crop
                     )
                 }
+            }
 
-                DropdownMenu(
-                    expanded = expanded,
-                    onDismissRequest = { expanded = false }
-                ) {
-                    listOf(
-                        "pendiente" to Icons.Default.Schedule,
-                        "atendido" to Icons.Default.Construction,
-                        "resuelto" to Icons.Default.CheckCircle
-                    ).forEach { (status, icon) ->
-                        DropdownMenuItem(
-                            text = {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
-                                ) {
-                                    Icon(icon, contentDescription = null)
-                                    Text(status.capitalize())
+            Spacer(Modifier.height(16.dp))
+
+            // Botón expandir
+            FilledTonalButton(
+                onClick = { expanded = !expanded },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore, null)
+                Spacer(Modifier.width(8.dp))
+                Text(if (expanded) "Ocultar Detalles" else "Ver en Mapa")
+            }
+
+            // MAPA + ESTADO
+            AnimatedVisibility(visible = expanded, enter = expandVertically(), exit = shrinkVertically()) {
+                Column {
+                    Spacer(Modifier.height(12.dp))
+
+                    // MAPA
+                    report.location?.let { geoPoint ->
+                        val latLng = LatLng(geoPoint.latitude, geoPoint.longitude)
+                        GoogleMapView(latLng = latLng, title = report.title)
+                    }
+
+                    Spacer(Modifier.height(12.dp))
+
+                    // Cambiar estado
+                    var dropdownExpanded by remember { mutableStateOf(false) }
+                    Box {
+                        OutlinedButton(
+                            onClick = { dropdownExpanded = true },
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.primary)
+                        ) {
+                            Icon(Icons.Default.Edit, null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Cambiar Estado")
+                            Spacer(Modifier.weight(1f))
+                            Icon(if (dropdownExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore, null)
+                        }
+
+                        DropdownMenu(expanded = dropdownExpanded, onDismissRequest = { dropdownExpanded = false }) {
+                            listOf("pendiente" to Icons.Default.Schedule, "atendido" to Icons.Default.Construction, "resuelto" to Icons.Default.CheckCircle)
+                                .forEach { (status, icon) ->
+                                    DropdownMenuItem(
+                                        text = {
+                                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                                Icon(icon, null)
+                                                Text(status.replaceFirstChar { it.uppercase() })
+                                            }
+                                        },
+                                        onClick = {
+                                            onStatusChange(status)
+                                            dropdownExpanded = false
+                                        }
+                                    )
                                 }
-                            },
-                            onClick = {
-                                onStatusChange(status)
-                                expanded = false
-                            }
-                        )
+                        }
                     }
                 }
             }
@@ -305,88 +242,81 @@ private fun ReportCard(
     }
 }
 
+// --- MAPA CON GOOGLE MAPS ---
 @Composable
-private fun EmergencyCard(
-    emergency: Emergency,
-    onClose: () -> Unit
-) {
+fun GoogleMapView(latLng: LatLng, title: String) {
+    val context = LocalContext.current
+    val mapView = remember { MapView(context) }
+
+    AndroidView(
+        factory = {
+            mapView.apply {
+                layoutParams = ViewGroup.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 300)
+                onCreate(null)
+                onResume()
+            }
+        },
+        update = { view ->
+            view.getMapAsync { googleMap ->
+                googleMap.clear()
+                googleMap.addMarker(MarkerOptions().position(latLng).title(title))
+                googleMap.moveCamera(CameraUpdateFactory.newLatLngZoom(latLng, 16f))
+                googleMap.uiSettings.isZoomControlsEnabled = true
+            }
+        }
+    )
+}
+
+@Composable
+private fun EmergenciesContent(emergencies: List<Emergency>, emergencyVM: EmergencyViewModel) {
+    if (emergencies.isEmpty()) {
+        EmptyState(Icons.Default.Check, "Sin emergencias", "Todo en calma")
+    } else {
+        LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            items(emergencies, key = { it.id }) { emergency ->
+                EmergencyCard(emergency = emergency, onClose = { emergencyVM.closeEmergency(emergency.id) })
+            }
+        }
+    }
+}
+
+@Composable
+private fun EmergencyCard(emergency: Emergency, onClose: () -> Unit) {
     var showDialog by remember { mutableStateOf(false) }
 
     ElevatedCard(
-        modifier = Modifier
-            .fillMaxWidth()
-            .semantics { contentDescription = "Emergencia activa" },
-        colors = CardDefaults.elevatedCardColors(
-            containerColor = MaterialTheme.colorScheme.errorContainer
-        ),
-        elevation = CardDefaults.elevatedCardElevation(defaultElevation = 4.dp)
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.errorContainer),
+        elevation = CardDefaults.elevatedCardElevation(4.dp)
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Icon(
-                    Icons.Default.Warning,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.size(32.dp)
-                )
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Icon(Icons.Default.Warning, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(32.dp))
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "EMERGENCIA ACTIVA",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onErrorContainer
-                    )
-                    Text(
-                        text = "ID: ${emergency.id.take(8)}...",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.7f)
-                    )
+                    Text("EMERGENCIA ACTIVA", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onErrorContainer)
+                    Text("ID: ${emergency.id.take(8)}...", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.7f))
                 }
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(Modifier.height(16.dp))
 
-            ListItem(
-                colors = ListItemDefaults.colors(
-                    containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.5f)
-                ),
-                headlineContent = { Text("Usuario") },
-                supportingContent = { Text(emergency.createdByName) },
-                leadingContent = {
-                    Icon(Icons.Default.Person, contentDescription = null)
-                }
-            )
+            ListItem(headlineContent = { Text("Usuario") }, supportingContent = { Text(emergency.createdByName) }, leadingContent = { Icon(Icons.Default.Person, null) })
 
             emergency.location?.let { gp ->
-                Spacer(modifier = Modifier.height(8.dp))
+                Spacer(Modifier.height(8.dp))
                 ListItem(
-                    colors = ListItemDefaults.colors(
-                        containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.5f)
-                    ),
                     headlineContent = { Text("Ubicación") },
-                    supportingContent = {
-                        Text("${String.format("%.6f", gp.latitude)}, ${String.format("%.6f", gp.longitude)}")
-                    },
-                    leadingContent = {
-                        Icon(Icons.Default.LocationOn, contentDescription = null)
-                    }
+                    supportingContent = { Text("${String.format("%.6f", gp.latitude)}, ${String.format("%.6f", gp.longitude)}") },
+                    leadingContent = { Icon(Icons.Default.LocationOn, null) }
                 )
+                Spacer(Modifier.height(12.dp))
+                GoogleMapView(latLng = LatLng(gp.latitude, gp.longitude), title = "Emergencia")
             }
 
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(Modifier.height(16.dp))
 
-            Button(
-                onClick = { showDialog = true },
-                modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = MaterialTheme.colorScheme.error
-                ),
-                contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp)
-            ) {
-                Icon(Icons.Default.Close, contentDescription = null)
+            Button(onClick = { showDialog = true }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)) {
+                Icon(Icons.Default.Close, null)
                 Spacer(Modifier.width(8.dp))
                 Text("Cerrar Emergencia", fontWeight = FontWeight.Bold)
             }
@@ -396,68 +326,22 @@ private fun EmergencyCard(
     if (showDialog) {
         AlertDialog(
             onDismissRequest = { showDialog = false },
-            icon = { Icon(Icons.Default.Warning, contentDescription = null) },
-            title = { Text("¿Cerrar emergencia?") },
-            text = { Text("Esta acción marcará la emergencia como resuelta. ¿Deseas continuar?") },
-            confirmButton = {
-                Button(
-                    onClick = {
-                        onClose()
-                        showDialog = false
-                    },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.error
-                    )
-                ) {
-                    Text("Sí, cerrar")
-                }
-            },
-            dismissButton = {
-                TextButton(onClick = { showDialog = false }) {
-                    Text("Cancelar")
-                }
-            }
+            icon = { Icon(Icons.Default.Warning, null) },
+            title = { Text("Cerrar emergencia?") },
+            text = { Text("¿Estás seguro?") },
+            confirmButton = { Button(onClick = { onClose(); showDialog = false }, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)) { Text("Sí") } },
+            dismissButton = { TextButton(onClick = { showDialog = false }) { Text("Cancelar") } }
         )
     }
 }
 
 @Composable
-private fun EmptyState(
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
-    message: String,
-    description: String
-) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(32.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            Icon(
-                icon,
-                contentDescription = null,
-                modifier = Modifier.size(80.dp),
-                tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)
-            )
-            Text(
-                text = message,
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface
-            )
-            Text(
-                text = description,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+private fun EmptyState(icon: androidx.compose.ui.graphics.vector.ImageVector, message: String, description: String) {
+    Box(modifier = Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            Icon(icon, null, modifier = Modifier.size(80.dp), tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.3f))
+            Text(message, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+            Text(description, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
-}
-
-private fun String.capitalize() = replaceFirstChar {
-    if (it.isLowerCase()) it.titlecase() else it.toString()
 }

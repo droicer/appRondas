@@ -1,6 +1,16 @@
 package com.ronda.rondacajamarcaapp.ui.rondero
 
+import android.content.Context
+import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.net.Uri
+import android.os.Environment
+import android.util.Base64
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -10,15 +20,29 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
+import coil.compose.AsyncImage
 import com.google.firebase.firestore.GeoPoint
 import com.ronda.rondacajamarcaapp.auth.*
 import com.ronda.rondacajamarcaapp.utils.LocationUtils
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.io.ByteArrayOutputStream
+import java.io.File
+import java.text.SimpleDateFormat
+import java.util.*
+
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.TopAppBar
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -46,123 +70,67 @@ fun RonderoScreen(
             TopAppBar(
                 title = {
                     Column {
-                        Text(
-                            text = "Panel de Rondero",
-                            style = MaterialTheme.typography.titleLarge,
-                            fontWeight = FontWeight.Bold
-                        )
-                        Text(
-                            text = user.name,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                        )
+                        Text("Panel de Rondero", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                        Text(user.name, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 },
                 actions = {
-                    IconButton(
-                        onClick = logout,
-                        modifier = Modifier.semantics {
-                            contentDescription = "Cerrar sesión"
-                        }
-                    ) {
-                        Icon(
-                            Icons.Default.ExitToApp,
-                            contentDescription = "Cerrar sesión"
-                        )
+                    IconButton(onClick = logout) {
+                        Icon(Icons.Default.ExitToApp, contentDescription = "Cerrar sesión")
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(
+                // ← AQUÍ ESTÁ LA CORRECCIÓN
+                colors = TopAppBarDefaults.smallTopAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primaryContainer,
                     titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer
                 )
             )
         },
         floatingActionButton = {
-            Column(
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-                horizontalAlignment = Alignment.End
+            FloatingActionButton(
+                onClick = { showEmergencyDialog = true },
+                containerColor = MaterialTheme.colorScheme.error,
+                contentColor = MaterialTheme.colorScheme.onError
             ) {
-                // Botón de emergencia flotante
-                FloatingActionButton(
-                    onClick = { showEmergencyDialog = true },
-                    containerColor = MaterialTheme.colorScheme.error,
-                    contentColor = MaterialTheme.colorScheme.onError,
-                    modifier = Modifier.semantics {
-                        contentDescription = "Activar emergencia"
-                    }
-                ) {
-                    Icon(
-                        Icons.Default.Warning,
-                        contentDescription = "Emergencia",
-                        modifier = Modifier.size(28.dp)
-                    )
-                }
+                Icon(Icons.Default.Warning, contentDescription = "Emergencia", modifier = Modifier.size(28.dp))
             }
         }
     ) { paddingValues ->
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(paddingValues)
-        ) {
+        Box(modifier = Modifier.fillMaxSize().padding(paddingValues)) {
             Column(modifier = Modifier.fillMaxSize()) {
-                // Tabs de navegación
-                TabRow(
-                    selectedTabIndex = selectedTab,
-                    containerColor = MaterialTheme.colorScheme.surface
-                ) {
-                    Tab(
-                        selected = selectedTab == 0,
-                        onClick = { selectedTab = 0 },
-                        text = { Text("Crear Reporte") },
-                        icon = { Icon(Icons.Default.Add, contentDescription = null) }
-                    )
-                    Tab(
-                        selected = selectedTab == 1,
-                        onClick = { selectedTab = 1 },
-                        text = { Text("Mis Reportes (${reports.size})") },
-                        icon = { Icon(Icons.Default.List, contentDescription = null) }
-                    )
+                TabRow(selectedTabIndex = selectedTab) {
+                    Tab(selected = selectedTab == 0, onClick = { selectedTab = 0 }) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Icon(Icons.Default.Add, null)
+                            Text("Crear Reporte")
+                        }
+                    }
+                    Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Icon(Icons.Default.List, null)
+                            Text("Mis Reportes (${reports.size})")
+                        }
+                    }
                 }
 
-                // Contenido según tab
                 when (selectedTab) {
-                    0 -> CreateReportTab(
-                        user = user,
-                        reportVM = reportVM,
-                        onSuccess = {
-                            successMessage = "Reporte creado exitosamente"
-                            showSuccessSnackbar = true
-                            selectedTab = 1
-                        }
-                    )
-                    1 -> MyReportsTab(reports = reports)
+                    0 -> CreateReportTab(user, reportVM) {
+                        successMessage = "Reporte creado"
+                        showSuccessSnackbar = true
+                        selectedTab = 1
+                    }
+                    1 -> MyReportsTab(reports)
                 }
             }
 
-            // Snackbar de éxito
             if (showSuccessSnackbar) {
-                LaunchedEffect(Unit) {
-                    kotlinx.coroutines.delay(3000)
-                    showSuccessSnackbar = false
-                }
-
+                LaunchedEffect(Unit) { kotlinx.coroutines.delay(3000); showSuccessSnackbar = false }
                 Snackbar(
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .padding(16.dp),
-                    containerColor = MaterialTheme.colorScheme.primaryContainer,
-                    contentColor = MaterialTheme.colorScheme.onPrimaryContainer
+                    modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp),
+                    containerColor = MaterialTheme.colorScheme.primaryContainer
                 ) {
-                    Row(
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            Icons.Default.CheckCircle,
-                            contentDescription = null,
-                            modifier = Modifier.size(20.dp)
-                        )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.CheckCircle, null, modifier = Modifier.size(20.dp))
                         Text(successMessage)
                     }
                 }
@@ -170,52 +138,27 @@ fun RonderoScreen(
         }
     }
 
-    // Diálogo de confirmación de emergencia
+    // Diálogo emergencia
     if (showEmergencyDialog) {
         AlertDialog(
             onDismissRequest = { showEmergencyDialog = false },
-            icon = {
-                Icon(
-                    Icons.Default.Warning,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.size(48.dp)
-                )
-            },
-            title = {
-                Text(
-                    "🚨 Activar Emergencia",
-                    fontWeight = FontWeight.Bold
-                )
-            },
-            text = {
-                Text(
-                    "Esta acción notificará inmediatamente a todos los administradores sobre una situación de emergencia.\n\n¿Estás seguro de continuar?",
-                    style = MaterialTheme.typography.bodyMedium
-                )
-            },
+            icon = { Icon(Icons.Default.Warning, null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(48.dp)) },
+            title = { Text("Activar Emergencia") },
+            text = { Text("¿Notificar a administradores?") },
             confirmButton = {
                 Button(
                     onClick = {
                         LocationUtils.getCurrentLocation(context) { lat, lng ->
                             emergencyVM.createEmergency(user.uid, user.name, lat, lng)
-                            successMessage = "Emergencia activada. Los administradores han sido notificados"
+                            successMessage = "Emergencia activada"
                             showSuccessSnackbar = true
                         }
                         showEmergencyDialog = false
                     },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = MaterialTheme.colorScheme.error
-                    )
-                ) {
-                    Text("Sí, activar emergencia", fontWeight = FontWeight.Bold)
-                }
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) { Text("Sí") }
             },
-            dismissButton = {
-                TextButton(onClick = { showEmergencyDialog = false }) {
-                    Text("Cancelar")
-                }
-            }
+            dismissButton = { TextButton(onClick = { showEmergencyDialog = false }) { Text("Cancelar") } }
         )
     }
 }
@@ -228,103 +171,94 @@ private fun CreateReportTab(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val hasCamera = context.packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY)
 
     var title by remember { mutableStateOf("") }
     var description by remember { mutableStateOf("") }
     var isLoading by remember { mutableStateOf(false) }
+    var photoUri by remember { mutableStateOf<Uri?>(null) }
+    var showPermissionDenied by remember { mutableStateOf(false) }
 
-    val isFormValid = title.isNotBlank() && description.isNotBlank()
+    val photoFile = remember { createTempImageFile(context) }
 
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
+    val cameraLauncher = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
+        if (success) photoUri = photoFile.toUri(context)
+    }
+
+    val permissionLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) cameraLauncher.launch(photoFile.toUri(context))
+        else showPermissionDenied = true
+    }
+
+    LazyColumn(modifier = Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         item {
-            // Card de instrucciones
-            ElevatedCard(
-                colors = CardDefaults.elevatedCardColors(
-                    containerColor = MaterialTheme.colorScheme.secondaryContainer
-                )
-            ) {
-                Row(
-                    modifier = Modifier.padding(16.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(
-                        Icons.Default.Info,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSecondaryContainer,
-                        modifier = Modifier.size(24.dp)
-                    )
-                    Text(
-                        text = "Completa el formulario para crear un nuevo reporte. Tu ubicación será registrada automáticamente.",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSecondaryContainer
-                    )
-                }
-            }
-        }
-
-        item {
-            // Formulario
             OutlinedCard {
-                Column(
-                    modifier = Modifier.padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    Text(
-                        text = "Nuevo Reporte",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold
-                    )
+                Column(modifier = Modifier.padding(16.dp)) {
+                    Text("Nuevo Reporte", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Spacer(Modifier.height(16.dp))
 
                     OutlinedTextField(
-                        value = title,
-                        onValueChange = { title = it },
-                        label = { Text("Título") },
-                        placeholder = { Text("Ej: Luminaria dañada") },
-                        leadingIcon = {
-                            Icon(Icons.Default.Title, contentDescription = null)
-                        },
-                        supportingText = { Text("${title.length}/100 caracteres") },
-                        isError = title.length > 100,
-                        modifier = Modifier.fillMaxWidth(),
-                        singleLine = true,
-                        enabled = !isLoading
+                        value = title, onValueChange = { title = it },
+                        label = { Text("Título") }, leadingIcon = { Icon(Icons.Default.Title, null) },
+                        modifier = Modifier.fillMaxWidth(), singleLine = true, enabled = !isLoading
                     )
 
+                    Spacer(Modifier.height(12.dp))
+
                     OutlinedTextField(
-                        value = description,
-                        onValueChange = { description = it },
-                        label = { Text("Descripción") },
-                        placeholder = { Text("Describe la situación...") },
-                        leadingIcon = {
-                            Icon(
-                                Icons.Default.Description,
-                                contentDescription = null,
-                            )
-                        },
-                        supportingText = { Text("${description.length}/500 caracteres") },
-                        isError = description.length > 500,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .heightIn(min = 120.dp),
-                        minLines = 4,
-                        maxLines = 8,
-                        enabled = !isLoading
+                        value = description, onValueChange = { description = it },
+                        label = { Text("Descripción") }, leadingIcon = { Icon(Icons.Default.Description, null) },
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 120.dp), minLines = 4, enabled = !isLoading
                     )
+
+                    Spacer(Modifier.height(16.dp))
+
+                    // BOTÓN CÁMARA
+                    if (hasCamera) {
+                        Button(
+                            onClick = {
+                                when {
+                                    ContextCompat.checkSelfPermission(context, android.Manifest.permission.CAMERA) ==
+                                            PackageManager.PERMISSION_GRANTED -> {
+                                        cameraLauncher.launch(photoFile.toUri(context))
+                                    }
+                                    else -> permissionLauncher.launch(android.Manifest.permission.CAMERA)
+                                }
+                            },
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.secondaryContainer)
+                        ) {
+                            Icon(Icons.Default.CameraAlt, null)
+                            Spacer(Modifier.width(8.dp))
+                            Text("Tomar Foto")
+                        }
+                    } else {
+                        Surface(color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f), shape = MaterialTheme.shapes.medium) {
+                            Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.CameraAlt, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Spacer(Modifier.width(8.dp))
+                                Text("Cámara no disponible", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                        }
+                    }
+
+                    // VISTA PREVIA
+                    photoUri?.let { uri ->
+                        Spacer(Modifier.height(12.dp))
+                        AsyncImage(
+                            model = uri, contentDescription = "Foto",
+                            modifier = Modifier.fillMaxWidth().height(200.dp).clip(MaterialTheme.shapes.medium),
+                            contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                        )
+                        TextButton(onClick = { photoUri = null }, modifier = Modifier.align(Alignment.End)) {
+                            Text("Eliminar")
+                        }
+                    }
 
                     ListItem(
-                        colors = ListItemDefaults.colors(
-                            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
-                        ),
                         headlineContent = { Text("Reportado por") },
                         supportingContent = { Text(user.name) },
-                        leadingContent = {
-                            Icon(Icons.Default.Person, contentDescription = null)
-                        }
+                        leadingContent = { Icon(Icons.Default.Person, null) }
                     )
                 }
             }
@@ -337,18 +271,19 @@ private fun CreateReportTab(
                     LocationUtils.getCurrentLocation(context) { lat, lng ->
                         scope.launch {
                             try {
+                                val photoBase64 = photoUri?.let { uri -> uriToBase64(uri, context) }
+
                                 val report = Report(
                                     title = title.trim(),
                                     description = description.trim(),
                                     status = "pendiente",
                                     createdBy = user.uid,
                                     createdByName = user.name,
-                                    location = GeoPoint(lat, lng)
+                                    location = GeoPoint(lat, lng),
+                                    photoBase64 = photoBase64
                                 )
                                 reportVM.createReport(report)
-                                title = ""
-                                description = ""
-                                isLoading = false
+                                title = ""; description = ""; photoUri = null; isLoading = false
                                 onSuccess()
                             } catch (e: Exception) {
                                 isLoading = false
@@ -356,39 +291,60 @@ private fun CreateReportTab(
                         }
                     }
                 },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(56.dp),
-                enabled = isFormValid && !isLoading
+                modifier = Modifier.fillMaxWidth().height(56.dp),
+                enabled = title.isNotBlank() && description.isNotBlank() && !isLoading
             ) {
                 if (isLoading) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(24.dp),
-                        color = MaterialTheme.colorScheme.onPrimary,
-                        strokeWidth = 2.dp
-                    )
+                    CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 2.dp)
                     Spacer(Modifier.width(12.dp))
-                    Text("Creando reporte...")
+                    Text("Creando...")
                 } else {
-                    Icon(Icons.Default.Send, contentDescription = null)
+                    Icon(Icons.Default.Send, null)
                     Spacer(Modifier.width(8.dp))
-                    Text("Crear Reporte", fontWeight = FontWeight.SemiBold)
+                    Text("Crear Reporte")
                 }
             }
         }
     }
+
+    if (showPermissionDenied) {
+        AlertDialog(
+            onDismissRequest = { showPermissionDenied = false },
+            icon = { Icon(Icons.Default.Warning, null, tint = MaterialTheme.colorScheme.error) },
+            title = { Text("Permiso requerido") },
+            text = { Text("Necesitas la cámara para tomar fotos.") },
+            confirmButton = { TextButton(onClick = { showPermissionDenied = false }) { Text("OK") } }
+        )
+    }
 }
 
+// --- BASE64 CONVERSIÓN ---
+private suspend fun uriToBase64(uri: Uri, context: Context): String = withContext(Dispatchers.IO) {
+    val inputStream = context.contentResolver.openInputStream(uri)!!
+    val bitmap = BitmapFactory.decodeStream(inputStream)
+    val baos = ByteArrayOutputStream()
+    bitmap.compress(Bitmap.CompressFormat.JPEG, 60, baos) // < 300KB
+    val bytes = baos.toByteArray()
+    Base64.encodeToString(bytes, Base64.DEFAULT)
+}
+
+// --- ARCHIVO TEMPORAL ---
+private fun createTempImageFile(context: Context): File {
+    val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
+    val storageDir = context.getExternalFilesDir(Environment.DIRECTORY_PICTURES)
+    return File.createTempFile("JPEG_${timeStamp}_", ".jpg", storageDir)
+}
+
+private fun File.toUri(context: Context): Uri =
+    FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", this)
+
+// --- LISTA DE REPORTES ---
 @Composable
 private fun MyReportsTab(reports: List<Report>) {
     if (reports.isEmpty()) {
         EmptyReportsState()
     } else {
-        LazyColumn(
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
-        ) {
+        LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             items(reports, key = { it.id }) { report ->
                 ReportItemCard(report)
             }
@@ -405,68 +361,51 @@ private fun ReportItemCard(report: Report) {
         else -> MaterialTheme.colorScheme.outline
     }
 
-    ElevatedCard(
-        modifier = Modifier.fillMaxWidth(),
-        elevation = CardDefaults.elevatedCardElevation(defaultElevation = 2.dp)
-    ) {
+    ElevatedCard(modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(16.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Text(
-                    text = report.title,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.weight(1f)
-                )
+            Row(horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text(report.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
                 AssistChip(
                     onClick = { },
                     label = { Text(report.status.uppercase()) },
-                    colors = AssistChipDefaults.assistChipColors(
-                        containerColor = statusColor.copy(alpha = 0.15f),
-                        labelColor = statusColor
-                    ),
+                    colors = AssistChipDefaults.assistChipColors(containerColor = statusColor.copy(alpha = 0.15f), labelColor = statusColor),
                     leadingIcon = {
                         Icon(
-                            imageVector = when (report.status) {
+                            when (report.status) {
                                 "pendiente" -> Icons.Default.Schedule
                                 "atendido" -> Icons.Default.Construction
                                 "resuelto" -> Icons.Default.CheckCircle
                                 else -> Icons.Default.Info
-                            },
-                            contentDescription = null,
-                            modifier = Modifier.size(16.dp)
+                            }, null, modifier = Modifier.size(16.dp)
                         )
                     }
                 )
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
-
-            Text(
-                text = report.description,
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+            Spacer(Modifier.height(12.dp))
+            Text(report.description, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
             report.location?.let { gp ->
-                Spacer(modifier = Modifier.height(12.dp))
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Icon(
-                        Icons.Default.LocationOn,
-                        contentDescription = null,
-                        modifier = Modifier.size(16.dp),
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Text(
-                        text = "${String.format("%.6f", gp.latitude)}, ${String.format("%.6f", gp.longitude)}",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                Spacer(Modifier.height(8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.LocationOn, null, modifier = Modifier.size(16.dp))
+                    Text("${String.format("%.6f", gp.latitude)}, ${String.format("%.6f", gp.longitude)}", style = MaterialTheme.typography.bodySmall)
+                }
+            }
+
+            // FOTO EN BASE64
+            report.photoBase64?.let { base64 ->
+                Spacer(Modifier.height(12.dp))
+                val bitmap = remember(base64) {
+                    val bytes = Base64.decode(base64, Base64.DEFAULT)
+                    BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+                }
+                bitmap?.let {
+                    Image(
+                        bitmap = it.asImageBitmap(),
+                        contentDescription = "Foto",
+                        modifier = Modifier.fillMaxWidth().height(200.dp).clip(MaterialTheme.shapes.medium),
+                        contentScale = androidx.compose.ui.layout.ContentScale.Crop
                     )
                 }
             }
@@ -476,32 +415,11 @@ private fun ReportItemCard(report: Report) {
 
 @Composable
 private fun EmptyReportsState() {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(32.dp),
-        contentAlignment = Alignment.Center
-    ) {
-        Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) {
-            Icon(
-                Icons.Default.Assignment,
-                contentDescription = null,
-                modifier = Modifier.size(80.dp),
-                tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)
-            )
-            Text(
-                text = "No tienes reportes",
-                style = MaterialTheme.typography.titleLarge,
-                fontWeight = FontWeight.SemiBold
-            )
-            Text(
-                text = "Crea tu primer reporte usando la pestaña anterior",
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
+    Box(modifier = Modifier.fillMaxSize().padding(32.dp), contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Icon(Icons.Default.Assignment, null, modifier = Modifier.size(80.dp), tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.3f))
+            Text("No tienes reportes", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+            Text("Crea uno en la pestaña anterior", color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

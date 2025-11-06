@@ -1,6 +1,7 @@
 package com.ronda.rondacajamarcaapp
 
 import android.Manifest
+import android.content.pm.PackageManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -33,6 +34,11 @@ class MainActivity : ComponentActivity() {
         if (!LocationUtils.hasLocationPermission(this)) {
             permissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
         }
+
+        if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
+            permissionLauncher.launch(Manifest.permission.CAMERA)
+        }
+
 
         setContent {
             RondaCajamarcaAppTheme {

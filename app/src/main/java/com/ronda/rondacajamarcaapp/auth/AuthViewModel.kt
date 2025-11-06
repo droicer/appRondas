@@ -1,9 +1,14 @@
 package com.ronda.rondacajamarcaapp.auth
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.google.firebase.Firebase
 import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.auth.auth
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.firestore
+import com.google.firebase.messaging.FirebaseMessaging
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -30,6 +35,28 @@ class AuthViewModel : ViewModel() {
                 }
             } else {
                 _currentUser.value = null
+            }
+        }
+    }
+
+    private fun registerFcmToken() {
+        FirebaseMessaging.getInstance().token.addOnCompleteListener { task ->
+            if (!task.isSuccessful) return@addOnCompleteListener
+
+            val token = task.result
+            val currentUser = Firebase.auth.currentUser
+
+            if (currentUser != null) {
+                Firebase.firestore
+                    .collection("users")
+                    .document(currentUser.uid)
+                    .update("fcmToken", token)
+                    .addOnSuccessListener {
+                        Log.d("FCM", "Token guardado para UID: ${currentUser.uid}")
+                    }
+                    .addOnFailureListener { e ->
+                        Log.e("FCM", "Error al guardar token", e)
+                    }
             }
         }
     }

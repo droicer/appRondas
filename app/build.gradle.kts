@@ -69,6 +69,11 @@ dependencies {
     implementation("com.google.firebase:firebase-storage-ktx")
     implementation("com.google.firebase:firebase-messaging-ktx")
 
+    // Firebase Cloud Messaging (notificaciones)
+
+    // WorkManager (para manejar notificaciones en background)
+    implementation("androidx.work:work-runtime-ktx:2.9.0")
+
     // Ubicación
     implementation("com.google.android.gms:play-services-location:21.0.1")
 
@@ -82,4 +87,9 @@ dependencies {
     debugImplementation("androidx.compose.ui:ui-test-manifest")
 
     implementation("androidx.compose.material:material-icons-extended")
+
+    implementation ("io.coil-kt:coil-compose:2.4.0")
+
+    implementation ("com.google.android.gms:play-services-maps:18.2.0")
+    implementation ("com.google.maps.android:android-maps-utils:3.0.0")
 }

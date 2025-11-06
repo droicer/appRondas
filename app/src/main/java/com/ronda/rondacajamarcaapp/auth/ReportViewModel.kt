@@ -1,59 +1,81 @@
 package com.ronda.rondacajamarcaapp.auth
 
 import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
+import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.tasks.await
 
 class ReportViewModel : ViewModel() {
-
     private val db = FirebaseFirestore.getInstance()
 
-    // Reportes generales (para admin)
+    // LISTA GLOBAL (para Admin)
     private val _reports = MutableStateFlow<List<Report>>(emptyList())
     val reports: StateFlow<List<Report>> = _reports
 
-    // Reportes del usuario logueado (para rondero/usuario)
+    // LISTA POR USUARIO (para Rondero y User)
     private val _userReports = MutableStateFlow<List<Report>>(emptyList())
     val userReports: StateFlow<List<Report>> = _userReports
 
-    /** Escuchar en tiempo real todos los reportes (para ADMIN) */
     fun listenReports() {
-        db.collection("reports").addSnapshotListener { snap, _ ->
-            val list = snap?.documents?.mapNotNull { d ->
-                d.toObject(Report::class.java)?.copy(id = d.id)
-            } ?: emptyList()
-            viewModelScope.launch { _reports.value = list }
-        }
-    }
+        db.collection("reports")
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    android.util.Log.e("ReportVM", "Error escuchando reportes", error)
+                    _reports.value = emptyList()
+                    return@addSnapshotListener
+                }
 
-    /** Escuchar en tiempo real los reportes de un usuario específico */
-    fun listenUserReports(userId: String) {
-        db.collection("reports").whereEqualTo("createdBy", userId)
-            .addSnapshotListener { snap, _ ->
-                val list = snap?.documents?.mapNotNull { d ->
-                    d.toObject(Report::class.java)?.copy(id = d.id)
+                val list = snapshot?.documents?.mapNotNull { doc ->
+                    doc.toObject(Report::class.java)?.copy(id = doc.id)
                 } ?: emptyList()
-                viewModelScope.launch { _userReports.value = list }
+
+                _reports.value = list
             }
     }
 
-    /** Crear un reporte nuevo */
-    suspend fun createReport(report: Report) {
-        db.collection("reports").add(report).await()
+    fun listenUserReports(userId: String) {
+        db.collection("reports")
+            .whereEqualTo("createdBy", userId)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) {
+                    android.util.Log.e("ReportVM", "Error en mis reportes", error)
+                    _userReports.value = emptyList()
+                    return@addSnapshotListener
+                }
+
+                val list = snapshot?.documents?.mapNotNull { doc ->
+                    doc.toObject(Report::class.java)?.copy(id = doc.id)
+                } ?: emptyList()
+
+                _userReports.value = list
+            }
     }
 
-    /** Cambiar estado del reporte */
+
+    // CREAR REPORTE (CON ID CORRECTO)
+    fun createReport(report: Report) {
+        val docRef = db.collection("reports").document()  // Genera ID
+        val newReport = report.copy(id = docRef.id)       // Asigna ID
+
+        docRef.set(newReport.toMap())
+            .addOnSuccessListener {
+                android.util.Log.d("ReportVM", "Reporte creado con ID: ${docRef.id}")
+            }
+            .addOnFailureListener { e ->
+                android.util.Log.e("ReportVM", "Error al crear reporte", e)
+            }
+    }
+
+    // CAMBIAR ESTADO (Admin)
     fun updateReportStatus(id: String, newStatus: String) {
-        viewModelScope.launch {
-            try {
-                db.collection("reports").document(id).update("status", newStatus).await()
-            } catch (e: Exception) {
-                e.printStackTrace()
+        db.collection("reports").document(id)
+            .update("status", newStatus)
+            .addOnSuccessListener {
+                android.util.Log.d("ReportVM", "Estado actualizado: $newStatus")
             }
-        }
+            .addOnFailureListener { e ->
+                android.util.Log.e("ReportVM", "Error al actualizar estado", e)
+            }
     }
 }
