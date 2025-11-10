@@ -1,14 +1,13 @@
 {
   "project_info": {
-    "project_number": "434178826347",
-    "firebase_url": "https://login-5de89-default-rtdb.firebaseio.com",
-    "project_id": "login-5de89",
-    "storage_bucket": "login-5de89.firebasestorage.app"
+    "project_number": "38680300553",
+    "project_id": "rondacajamarca-180d0",
+    "storage_bucket": "rondacajamarca-180d0.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:434178826347:android:5df1b795c465c07a41912e",
+        "mobilesdk_app_id": "1:38680300553:android:e507cfeac9c49838e9fcd8",
         "android_client_info": {
           "package_name": "com.ronda.rondacajamarcaapp"
         }
@@ -16,7 +15,7 @@
       "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyBlJBgvsUitsGy0xlDbFfMzuTQOYsNKvqw"
+          "current_key": "AIzaSyBgOsmRNYbMzgEnTekMRUiWiWaTgm1PVoU"
         }
       ],
       "services": {

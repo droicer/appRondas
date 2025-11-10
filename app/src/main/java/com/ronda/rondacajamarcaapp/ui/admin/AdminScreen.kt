@@ -1,3 +1,4 @@
+// File: app/src/main/java/com/ronda/rondacajamarcaapp/ui/admin/AdminScreen.kt
 package com.ronda.rondacajamarcaapp.ui.admin
 
 import android.graphics.Bitmap
@@ -44,6 +45,9 @@ fun AdminScreen(
     val emergencies by emergencyVM.emergencies.collectAsState()
     var selectedTab by remember { mutableStateOf(0) }
 
+    // FILTRAR SOLO EMERGENCIAS ACTIVAS
+    val activeEmergencies = emergencies.filter { it.status == "activa" }
+
     LaunchedEffect(Unit) {
         reportVM.listenReports()
         emergencyVM.listenEmergencies()
@@ -63,7 +67,6 @@ fun AdminScreen(
                         Icon(Icons.Default.ExitToApp, contentDescription = "Cerrar sesión")
                     }
                 },
-                // CORREGIDO: topBarColors → smallTopAppBarColors
                 colors = TopAppBarDefaults.smallTopAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primaryContainer,
                     titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer
@@ -81,22 +84,23 @@ fun AdminScreen(
                 }
                 Tab(selected = selectedTab == 1, onClick = { selectedTab = 1 }) {
                     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Badge(containerColor = if (emergencies.isNotEmpty()) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.surfaceVariant) {
+                        Badge(containerColor = if (activeEmergencies.isNotEmpty()) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.surfaceVariant) {
                             Icon(Icons.Default.Warning, null)
                         }
-                        Text("Emergencias (${emergencies.size})")
+                        Text("Emergencias (${activeEmergencies.size})")
                     }
                 }
             }
 
             when (selectedTab) {
-                0 -> ReportsContent(reports, reportVM)
-                1 -> EmergenciesContent(emergencies, emergencyVM)
+                0 -> ReportsContent(reports = reports, reportVM = reportVM)
+                1 -> EmergenciesContent(emergencies = activeEmergencies, emergencyVM = emergencyVM)
             }
         }
     }
 }
 
+// ==================== REPORTES ====================
 @Composable
 private fun ReportsContent(reports: List<Report>, reportVM: ReportViewModel) {
     if (reports.isEmpty()) {
@@ -108,15 +112,20 @@ private fun ReportsContent(reports: List<Report>, reportVM: ReportViewModel) {
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             items(reports, key = { it.id }) { report ->
-                ReportCard(report = report, onStatusChange = { reportVM.updateReportStatus(report.id, it) })
+                ReportCard(
+                    report = report,
+                    onStatusChange = { reportVM.updateReportStatus(report.id, it) },
+                    onDelete = { reportVM.deleteReport(report.id) } // FUNCIONA
+                )
             }
         }
     }
 }
 
 @Composable
-private fun ReportCard(report: Report, onStatusChange: (String) -> Unit) {
+private fun ReportCard(report: Report, onStatusChange: (String) -> Unit, onDelete: () -> Unit) {
     var expanded by remember { mutableStateOf(false) }
+    var showDeleteDialog by remember { mutableStateOf(false) }
     val statusColor = when (report.status) {
         "pendiente" -> MaterialTheme.colorScheme.error
         "atendido" -> MaterialTheme.colorScheme.tertiary
@@ -190,7 +199,7 @@ private fun ReportCard(report: Report, onStatusChange: (String) -> Unit) {
                 Text(if (expanded) "Ocultar Detalles" else "Ver en Mapa")
             }
 
-            // MAPA + ESTADO
+            // MAPA + ESTADO + BORRAR
             AnimatedVisibility(visible = expanded, enter = expandVertically(), exit = shrinkVertically()) {
                 Column {
                     Spacer(Modifier.height(12.dp))
@@ -236,9 +245,52 @@ private fun ReportCard(report: Report, onStatusChange: (String) -> Unit) {
                                 }
                         }
                     }
+
+                    // BOTÓN BORRAR (solo si resuelto)
+                    if (report.status == "resuelto") {
+                        Spacer(Modifier.height(8.dp))
+                        OutlinedButton(
+                            onClick = { showDeleteDialog = true },
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                containerColor = MaterialTheme.colorScheme.errorContainer,
+                                contentColor = MaterialTheme.colorScheme.error
+                            )
+                        ) {
+                            Icon(Icons.Default.Delete, null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(8.dp))
+                            Text("Borrar Reporte")
+                        }
+                    }
                 }
             }
         }
+    }
+
+    // DIÁLOGO DE BORRADO
+    if (showDeleteDialog) {
+        AlertDialog(
+            onDismissRequest = { showDeleteDialog = false },
+            icon = { Icon(Icons.Default.Delete, null) },
+            title = { Text("Borrar reporte") },
+            text = { Text("¿Estás seguro? Esta acción no se puede deshacer.") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        onDelete()
+                        showDeleteDialog = false
+                    },
+                    colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text("Sí, borrar")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showDeleteDialog = false }) {
+                    Text("Cancelar")
+                }
+            }
+        )
     }
 }
 
@@ -267,6 +319,7 @@ fun GoogleMapView(latLng: LatLng, title: String) {
     )
 }
 
+// ==================== EMERGENCIAS ====================
 @Composable
 private fun EmergenciesContent(emergencies: List<Emergency>, emergencyVM: EmergencyViewModel) {
     if (emergencies.isEmpty()) {
@@ -315,7 +368,11 @@ private fun EmergencyCard(emergency: Emergency, onClose: () -> Unit) {
 
             Spacer(Modifier.height(16.dp))
 
-            Button(onClick = { showDialog = true }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)) {
+            Button(
+                onClick = { showDialog = true },
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+            ) {
                 Icon(Icons.Default.Close, null)
                 Spacer(Modifier.width(8.dp))
                 Text("Cerrar Emergencia", fontWeight = FontWeight.Bold)
@@ -329,7 +386,15 @@ private fun EmergencyCard(emergency: Emergency, onClose: () -> Unit) {
             icon = { Icon(Icons.Default.Warning, null) },
             title = { Text("Cerrar emergencia?") },
             text = { Text("¿Estás seguro?") },
-            confirmButton = { Button(onClick = { onClose(); showDialog = false }, colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)) { Text("Sí") } },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        onClose()
+                        showDialog = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) { Text("Sí") }
+            },
             dismissButton = { TextButton(onClick = { showDialog = false }) { Text("Cancelar") } }
         )
     }

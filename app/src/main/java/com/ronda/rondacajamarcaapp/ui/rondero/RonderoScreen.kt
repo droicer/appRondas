@@ -318,15 +318,7 @@ private fun CreateReportTab(
     }
 }
 
-// --- BASE64 CONVERSIÓN ---
-private suspend fun uriToBase64(uri: Uri, context: Context): String = withContext(Dispatchers.IO) {
-    val inputStream = context.contentResolver.openInputStream(uri)!!
-    val bitmap = BitmapFactory.decodeStream(inputStream)
-    val baos = ByteArrayOutputStream()
-    bitmap.compress(Bitmap.CompressFormat.JPEG, 60, baos) // < 300KB
-    val bytes = baos.toByteArray()
-    Base64.encodeToString(bytes, Base64.DEFAULT)
-}
+
 
 // --- ARCHIVO TEMPORAL ---
 private fun createTempImageFile(context: Context): File {

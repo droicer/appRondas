@@ -2,6 +2,7 @@
     package="com.ronda.rondacajamarcaapp">
 
     <!-- PERMISOS -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Ubicación -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
@@ -26,9 +27,9 @@
 
     <application
         android:allowBackup="true"
-        android:icon="@mipmap/ic_launcher"
+        android:icon="@drawable/icon_rondas"
         android:label="Ronda Cajamarca"
-        android:roundIcon="@mipmap/ic_launcher_round"
+        android:roundIcon="@drawable/icon_rondas"
         android:supportsRtl="true"
         android:theme="@style/Theme.RondaCajamarcaApp">
 
@@ -47,6 +48,15 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths" />
         </provider>
+
+        <service
+            android:name=".MyFirebaseMessagingService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT"/>
+            </intent-filter>
+        </service>
+
 
         <!-- MAIN ACTIVITY -->
         <activity

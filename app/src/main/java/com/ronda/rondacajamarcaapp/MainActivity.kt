@@ -1,15 +1,19 @@
+// File: app/src/main/java/com/ronda/rondacajamarcaapp/MainActivity.kt
 package com.ronda.rondacajamarcaapp
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
+import androidx.compose.foundation.layout.*
+import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import com.ronda.rondacajamarcaapp.auth.*
 import com.ronda.rondacajamarcaapp.ui.admin.AdminScreen
 import com.ronda.rondacajamarcaapp.ui.rondero.RonderoScreen
@@ -23,22 +27,36 @@ class MainActivity : ComponentActivity() {
     private val reportVM: ReportViewModel by viewModels()
     private val emergencyVM: EmergencyViewModel by viewModels()
 
-    private val permissionLauncher = registerForActivityResult(
-        ActivityResultContracts.RequestPermission()
-    ) { /* no-op */ }
+    private val multiplePermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestMultiplePermissions()
+    ) { /* opcional: logs */ }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
-        // Solicitar permiso de ubicación si falta
+        val permissions = mutableListOf<String>()
+
+        // UBICACIÓN
         if (!LocationUtils.hasLocationPermission(this)) {
-            permissionLauncher.launch(Manifest.permission.ACCESS_FINE_LOCATION)
+            permissions.add(Manifest.permission.ACCESS_FINE_LOCATION)
+            permissions.add(Manifest.permission.ACCESS_COARSE_LOCATION)
         }
 
+        // CÁMARA
         if (checkSelfPermission(Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED) {
-            permissionLauncher.launch(Manifest.permission.CAMERA)
+            permissions.add(Manifest.permission.CAMERA)
         }
 
+        // NOTIFICACIONES (Android 13+)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                permissions.add(Manifest.permission.POST_NOTIFICATIONS)
+            }
+        }
+
+        if (permissions.isNotEmpty()) {
+            multiplePermissionLauncher.launch(permissions.toTypedArray())
+        }
 
         setContent {
             RondaCajamarcaAppTheme {
@@ -50,13 +68,10 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-/** Navegación en memoria */
+/** Navegación en memoria (solo para login/register) */
 private sealed class Screen {
     object Login : Screen()
     object Register : Screen()
-    data class Admin(val user: User) : Screen()
-    data class Rondero(val user: User) : Screen()
-    data class UserHome(val user: User) : Screen()
 }
 
 @Composable
@@ -65,57 +80,54 @@ private fun AppRoot(
     reportVM: ReportViewModel,
     emergencyVM: EmergencyViewModel
 ) {
-    var screen: Screen by remember { mutableStateOf(Screen.Login) }
-    var currentUser: User? by remember { mutableStateOf(null) }
+    val currentUser by authVM.currentUser.collectAsState()
+    val isLoading by authVM.isLoading.collectAsState()
 
-    when (val s = screen) {
-        is Screen.Login -> AuthScreen(
-            authVM = authVM,
-            onLoginSuccess = { user ->
-                currentUser = user
-                screen = when (user.role.lowercase()) {
-                    "admin" -> Screen.Admin(user)
-                    "rondero" -> Screen.Rondero(user)
-                    else -> Screen.UserHome(user)
-                }
-            },
-            onGoToRegister = { screen = Screen.Register }
-        )
-
-        is Screen.Register -> RegisterScreen(
-            authVM = authVM,
-            onRegisterSuccess = { screen = Screen.Login },
-            onBackToLogin = { screen = Screen.Login }
-        )
-
-        is Screen.Admin -> AdminScreen(
-            user = s.user,
-            reportVM = reportVM,
-            emergencyVM = emergencyVM,
-            authVM = authVM,
-            onLogout = {
-                currentUser = null
-                screen = Screen.Login
+    when {
+        isLoading -> {
+            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
             }
-        )
+        }
 
-        is Screen.Rondero -> RonderoScreen(
-            user = s.user,
-            reportVM = reportVM,
-            emergencyVM = emergencyVM,
-            logout = {
-                currentUser = null
-                screen = Screen.Login
+        currentUser != null -> {
+            when (currentUser!!.role.lowercase()) {
+                "admin" -> AdminScreen(
+                    user = currentUser!!,
+                    reportVM = reportVM,
+                    emergencyVM = emergencyVM,
+                    authVM = authVM,
+                    onLogout = { authVM.logout() }
+                )
+                "rondero" -> RonderoScreen(
+                    user = currentUser!!,
+                    reportVM = reportVM,
+                    emergencyVM = emergencyVM,
+                    logout = { authVM.logout() }
+                )
+                else -> UserScreen(
+                    user = currentUser!!,
+                    reportVM = reportVM,
+                    logout = { authVM.logout() }
+                )
             }
-        )
+        }
 
-        is Screen.UserHome -> UserScreen(
-            user = s.user,
-            reportVM = reportVM,
-            logout = {
-                currentUser = null
-                screen = Screen.Login
+        else -> {
+            var screen: Screen by remember { mutableStateOf(Screen.Login) }
+
+            when (screen) {
+                is Screen.Login -> AuthScreen(
+                    authVM = authVM,
+                    onLoginSuccess = { /* No necesitas hacer nada, el listener lo detecta */ },
+                    onGoToRegister = { screen = Screen.Register }
+                )
+                is Screen.Register -> RegisterScreen(
+                    authVM = authVM,
+                    onRegisterSuccess = { screen = Screen.Login },
+                    onBackToLogin = { screen = Screen.Login }
+                )
             }
-        )
+        }
     }
 }

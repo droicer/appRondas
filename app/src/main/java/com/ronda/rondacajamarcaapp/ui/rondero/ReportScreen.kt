@@ -279,19 +279,26 @@ fun ReportScreen(
 }
 
 // --- BASE64 CONVERSIÓN ---
-private suspend fun uriToBase64(uri: Uri, context: Context): String = withContext(Dispatchers.IO) {
-    try {
-        val inputStream = context.contentResolver.openInputStream(uri)!!
-        val bitmap = BitmapFactory.decodeStream(inputStream)
-        val baos = ByteArrayOutputStream()
-        bitmap.compress(Bitmap.CompressFormat.JPEG, 60, baos) // < 300KB
-        val bytes = baos.toByteArray()
-        Base64.encodeToString(bytes, Base64.DEFAULT)
-    } catch (e: Exception) {
-        Log.e("BASE64_ERROR", "Error al convertir a Base64", e)
-        throw e
-    }
+fun uriToBase64(uri: Uri, context: Context): String {
+    val inputStream = context.contentResolver.openInputStream(uri)
+    val originalBitmap = BitmapFactory.decodeStream(inputStream)
+
+    // 1) Reducir tamaño manteniendo proporción
+    val maxSize = 1024
+    val ratio = minOf(maxSize.toFloat() / originalBitmap.width, maxSize.toFloat() / originalBitmap.height)
+    val width = (originalBitmap.width * ratio).toInt()
+    val height = (originalBitmap.height * ratio).toInt()
+    val scaledBitmap = Bitmap.createScaledBitmap(originalBitmap, width, height, true)
+
+    // 2) Comprimir a JPEG 60%
+    val outputStream = ByteArrayOutputStream()
+    scaledBitmap.compress(Bitmap.CompressFormat.JPEG, 60, outputStream)
+    val byteArray = outputStream.toByteArray()
+
+    // 3) Convertir a Base64
+    return Base64.encodeToString(byteArray, Base64.DEFAULT)
 }
+
 
 // --- ARCHIVO TEMPORAL ---
 private fun createTempImageFile(context: Context): File {
