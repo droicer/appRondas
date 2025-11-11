@@ -1,4 +1,3 @@
-// File: app/src/main/java/com/ronda/rondacajamarcaapp/auth/AuthViewModel.kt
 package com.ronda.rondacajamarcaapp.auth
 
 import android.util.Log

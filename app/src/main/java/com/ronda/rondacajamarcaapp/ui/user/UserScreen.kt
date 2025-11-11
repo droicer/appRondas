@@ -61,6 +61,7 @@ fun UserScreen(
     var isCreatingReport by remember { mutableStateOf(false) }
     var showLogoutDialog by remember { mutableStateOf(false) }
     var showPermissionDenied by remember { mutableStateOf(false) }
+    var showPhotoTooLarge by remember { mutableStateOf(false) } // NUEVO
     var photoUri by remember { mutableStateOf<Uri?>(null) }
 
     val hasCamera = context.packageManager.hasSystemFeature(PackageManager.FEATURE_CAMERA_ANY)
@@ -88,7 +89,6 @@ fun UserScreen(
                         Text("Usuario", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 },
-                // CORREGIDO: topBarColors → smallTopAppBarColors
                 colors = TopAppBarDefaults.smallTopAppBarColors(
                     containerColor = MaterialTheme.colorScheme.primaryContainer,
                     titleContentColor = MaterialTheme.colorScheme.onPrimaryContainer
@@ -196,14 +196,21 @@ fun UserScreen(
                                 }
                             }
 
-                            // ENVIAR REPORTE
+                            // ENVIAR REPORTE (CORREGIDO)
                             Button(
                                 onClick = {
                                     if (title.isNotBlank() && desc.isNotBlank()) {
                                         LocationUtils.getCurrentLocation(context) { lat, lng ->
                                             scope.launch {
                                                 try {
-                                                    val photoBase64 = photoUri?.let { uri -> uriToBase64(uri, context) }
+                                                    val photoBase64 = photoUri?.let { uri ->
+                                                        uriToBase64Safe(uri, context)
+                                                    }
+
+                                                    if (photoUri != null && photoBase64 == null) {
+                                                        showPhotoTooLarge = true
+                                                        return@launch
+                                                    }
 
                                                     val report = Report(
                                                         title = title.trim(),
@@ -286,6 +293,19 @@ fun UserScreen(
             confirmButton = { TextButton(onClick = { showPermissionDenied = false }) { Text("OK") } }
         )
     }
+
+    // NUEVO: Diálogo de foto muy grande
+    if (showPhotoTooLarge) {
+        AlertDialog(
+            onDismissRequest = { showPhotoTooLarge = false },
+            icon = { Icon(Icons.Default.Warning, null, tint = MaterialTheme.colorScheme.error) },
+            title = { Text("Foto muy grande") },
+            text = { Text("La imagen es demasiado grande y no se puede enviar. Toma una foto más pequeña o con menos resolución.") },
+            confirmButton = {
+                TextButton(onClick = { showPhotoTooLarge = false }) { Text("OK") }
+            }
+        )
+    }
 }
 
 // --- ReportCard con foto en Base64 ---
@@ -347,14 +367,38 @@ private fun ReportCard(report: Report) {
     }
 }
 
-// --- BASE64 CONVERSIÓN ---
-private suspend fun uriToBase64(uri: Uri, context: Context): String = withContext(Dispatchers.IO) {
-    val inputStream = context.contentResolver.openInputStream(uri)!!
-    val bitmap = BitmapFactory.decodeStream(inputStream)
-    val baos = ByteArrayOutputStream()
-    bitmap.compress(Bitmap.CompressFormat.JPEG, 60, baos) // < 300KB
-    val bytes = baos.toByteArray()
-    Base64.encodeToString(bytes, Base64.DEFAULT)
+// === FUNCIÓN SEGURA: REDIMENSIONA + COMPRIME ===
+private suspend fun uriToBase64Safe(uri: Uri, context: Context): String? = withContext(Dispatchers.IO) {
+    try {
+        val inputStream = context.contentResolver.openInputStream(uri) ?: return@withContext null
+        var bitmap = BitmapFactory.decodeStream(inputStream)
+        inputStream.close()
+
+        // Redimensionar a máximo 800px
+        val maxSize = 800
+        if (bitmap.width > maxSize || bitmap.height > maxSize) {
+            val scale = maxSize.toFloat() / maxOf(bitmap.width, bitmap.height)
+            val newWidth = (bitmap.width * scale).toInt()
+            val newHeight = (bitmap.height * scale).toInt()
+            bitmap = Bitmap.createScaledBitmap(bitmap, newWidth, newHeight, true)
+        }
+
+        // Comprimir progresivamente
+        val baos = ByteArrayOutputStream()
+        var quality = 85
+        do {
+            baos.reset()
+            bitmap.compress(Bitmap.CompressFormat.JPEG, quality, baos)
+            quality -= 15
+        } while (baos.size() > 700_000 && quality > 20) // < 700 KB → Base64 < 1 MB
+
+        val bytes = baos.toByteArray()
+        if (bytes.size > 1_048_587) return@withContext null
+
+        Base64.encodeToString(bytes, Base64.DEFAULT)
+    } catch (e: Exception) {
+        null
+    }
 }
 
 // --- ARCHIVO TEMPORAL ---
